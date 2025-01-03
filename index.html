@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAFT Analisador</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <div class="header">
+        
+        <img src="aud colorida.png" alt="Logo da Empresa">
+        <div class="top-buttons no-print">
+            <button onclick="generatePDF()">Imprimir e Guardar PDF</button>
+            <button onclick="generateSpreadsheet()">Gerar Planilha</button>
+            <button><a href="pag2.html">Seguinte</a></button>
+        </div>
+    </div>
+
+    <h1 class="no-print">Processamento de SAFT VERIFICADO 12,28% </h1>
+    <input class="no-print" type="file" id="saftFile" accept=".xml">
+    <button class="no-print" onclick="processSAFT()">Processar Ficheiro</button>
+
+    <h2>Especificações da Empresa</h2>
+    <p class="company-specs"><strong>Nome da Empresa:</strong> <span id="empresaNome">N/A</span></p>
+    <p class="company-specs"><strong>NIF:</strong> <span id="empresaNIF">N/A</span></p>
+    <p class="company-specs"><strong>Localização:</strong> <span id="empresaLocalizacao">N/A</span></p>
+
+    <h2>Resultados</h2>
+    <p><strong>Total de Vendas:</strong> <span id="totalVendas">0</span></p>
+    <p><strong>Total de Imposto Pago:</strong> <span id="totalImposto">0</span></p>
+
+    <table id="saftTable">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Número da Fatura</th>
+                <th>Cliente</th>
+                <th>Valor Total</th>
+                <th>Valor sem IVA</th>
+                <th>Imposto (IVA)</th>
+                <th>Situação</th>
+                <th>Anulada</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+
+    <h2>Totais Mensais</h2>
+    <table id="monthlyTotalsTable">
+        <thead>
+            <tr>
+                <th>Mês</th>
+                <th>Total de Vendas</th>
+                <th>Total de Imposto</th>
+            </tr>
+        </thead>
+        <tbody>
+        </tbody>
+    </table>
+
+    <footer>
+        <p>&copy; 2024 Sua Empresa. Todos os direitos reservados.</p>
+        <p class="print-hidden">Hora de impressão: <span id="printTime"></span></p>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.1/xlsx.full.min.js"></script>
+    <script>
+        function formatCurrency(value) {
+            return value.toLocaleString('pt-PT', { style: 'currency', currency: 'AOA', minimumFractionDigits: 2 });
+        }
+
+        function processSAFT() {
+            const fileInput = document.getElementById('saftFile');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('Por favor, insira um ficheiro SAFT.');
+                return;
+            }
+
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const parser = new DOMParser();
+                const xmlDoc = parser.parseFromString(event.target.result, 'text/xml');
+
+                const companyName = xmlDoc.getElementsByTagName('CompanyName')[0]?.textContent || 'N/A';
+                const companyNIF = xmlDoc.getElementsByTagName('TaxRegistrationNumber')[0]?.textContent || 'N/A';
+                const companyAddress = xmlDoc.getElementsByTagName('CompanyAddress')[0]?.textContent || 'N/A';
+
+                document.getElementById('empresaNome').textContent = companyName;
+                document.getElementById('empresaNIF').textContent = companyNIF;
+                document.getElementById('empresaLocalizacao').textContent = companyAddress;
+
+                const invoices = xmlDoc.getElementsByTagName('Invoice');
+                const tableBody = document.querySelector('#saftTable tbody');
+                tableBody.innerHTML = '';
+
+                let totalVendas = 0;
+                let totalImposto = 0;
+
+                for (let i = 0; i < invoices.length; i++) {
+                    const invoice = invoices[i];
+
+                    const issueDate = invoice.getElementsByTagName('InvoiceDate')[0]?.textContent || 'N/A';
+                    const invoiceNo = invoice.getElementsByTagName('InvoiceNo')[0]?.textContent || 'N/A';
+                    const customer = invoice.getElementsByTagName('CustomerID')[0]?.textContent || 'N/A';
+                    const totalGross = parseFloat(invoice.getElementsByTagName('GrossTotal')[0]?.textContent || '0');
+                    const totalTax = parseFloat(invoice.getElementsByTagName('TaxPayable')[0]?.textContent || '0');
+                    const invoiceStatus = invoice.getElementsByTagName('InvoiceStatus')[0]?.textContent || 'N';
+                    const valueWithoutTax = totalGross - totalTax;
+
+                    let situation = 'Ativa';
+                    let cancelledLabel = 'Não';
+
+                    if (invoiceStatus === 'A') {
+                        situation = 'Anulada';
+                        cancelledLabel = 'Sim';
+                    }
+
+                    if (situation === 'Ativa') {
+                        totalVendas += totalGross;
+                        totalImposto += totalTax;
+                    }
+
+                    const row = document.createElement('tr');
+                    row.innerHTML = ` 
+                        <td>${issueDate}</td>
+                        <td>${invoiceNo}</td>
+                        <td>${customer}</td>
+                        <td>${formatCurrency(totalGross)}</td>
+                        <td>${formatCurrency(valueWithoutTax)}</td>
+                        <td>${formatCurrency(totalTax)}</td>
+                        <td>${situation}</td>
+                        <td>${cancelledLabel}</td>
+                    `;
+
+                    if (situation === 'Anulada') {
+                        row.style.backgroundColor = '#f8d7da';
+                    }
+
+                    tableBody.appendChild(row);
+                }
+
+                document.getElementById('totalVendas').textContent = formatCurrency(totalVendas);
+                document.getElementById('totalImposto').textContent = formatCurrency(totalImposto);
+            };
+
+            reader.readAsText(file);
+        }
+
+        function processMonthlyTotals() {
+            const rows = document.querySelectorAll("#saftTable tbody tr");
+            const monthlyTotals = {};
+
+            rows.forEach(row => {
+                const date = new Date(row.children[0].textContent);
+                const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+                const totalGross = parseFloat(row.children[3].textContent.replace(/\D+/g, '')) || 0;
+                const totalTax = parseFloat(row.children[5].textContent.replace(/\D+/g, '')) || 0;
+
+                if (!monthlyTotals[month]) {
+                    monthlyTotals[month] = { totalVendas: 0, totalImposto: 0 };
+                }
+
+                monthlyTotals[month].totalVendas += totalGross;
+                monthlyTotals[month].totalImposto += totalTax;
+            });
+
+            const tableBody = document.querySelector("#monthlyTotalsTable tbody");
+            tableBody.innerHTML = "";
+
+            Object.keys(monthlyTotals).forEach(month => {
+                const row = document.createElement("tr");
+                row.innerHTML = `
+                    <td>${month}</td>
+                    <td>${formatCurrency(monthlyTotals[month].totalVendas)}</td>
+                    <td>${formatCurrency(monthlyTotals[month].totalImposto)}</td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        function generatePDF() {
+            const printTime = new Date().toLocaleTimeString();
+            document.getElementById("printTime").textContent = printTime;
+            
+            const noPrintElements = document.querySelectorAll('.no-print');
+            noPrintElements.forEach(element => element.style.display = 'none');
+            window.print();
+            noPrintElements.forEach(element => element.style.display = '');
+        }
+
+        function generateSpreadsheet() {
+            const wb = XLSX.utils.book_new();
+            const sheetData = [];
+
+            const invoiceRows = Array.from(document.querySelectorAll("#saftTable tbody tr")).map(row => {
+                return Array.from(row.children).map(cell => cell.textContent);
+            });
+
+            sheetData.push(['Data', 'Número da Fatura', 'Cliente', 'Valor Total', 'Valor sem IVA', 'Imposto (IVA)', 'Situação', 'Anulada']);
+            sheetData.push(...invoiceRows);
+
+            const totalsRows = Array.from(document.querySelectorAll("#monthlyTotalsTable tbody tr")).map(row => {
+                return Array.from(row.children).map(cell => cell.textContent);
+            });
+
+            sheetData.push(['']);
+            sheetData.push(['Mês', 'Total de Vendas', 'Total de Imposto']);
+            sheetData.push(...totalsRows);
+
+            const ws = XLSX.utils.aoa_to_sheet(sheetData);
+            XLSX.utils.book_append_sheet(wb, ws, 'SAFT Analisado');
+            XLSX.writeFile(wb, 'saft_resultados.xlsx');
+        }
+    </script>
+</body>
+</html>
